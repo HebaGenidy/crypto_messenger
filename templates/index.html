@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Crypto Messenger</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14; --surface:#13161e; --surface2:#1a1e28;
+  --border:#252a38; --border2:#2e3448;
+  --text:#e2e6f0; --muted:#6b7494; --muted2:#454d6a;
+  --a:#00c896; --b:#e05c3a; --purple:#7c6af7;
+  --yellow:#f0b429; --green:#00c896; --red:#e05c3a;
+  --mono:'Courier New',monospace; --sans:'Segoe UI',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ── */
+header{display:flex;align-items:center;justify-content:space-between;padding:11px 22px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.logo{font-size:14px;font-weight:700;letter-spacing:.08em}
+.logo span{color:var(--purple)}
+.header-right{display:flex;align-items:center;gap:10px}
+.dh-status{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border2);color:var(--muted);letter-spacing:.05em;transition:all .4s}
+.dh-status.ready{border-color:var(--green);color:var(--green)}
+
+/* ── Agent Selector ── */
+#selector{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:40px}
+#selector h2{font-size:24px;font-weight:500}
+#selector p{font-size:13px;color:var(--muted);text-align:center;line-height:1.7}
+.cards{display:flex;gap:18px;margin-top:8px}
+.card{width:190px;padding:30px 18px;border:1px solid var(--border2);border-radius:14px;background:var(--surface);cursor:pointer;text-align:center;transition:border-color .2s,transform .15s}
+.card:hover{transform:translateY(-4px)}
+.card.a:hover{border-color:var(--a)}
+.card.b:hover{border-color:var(--b)}
+.card .av{width:48px;height:48px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
+.card.a .av{background:rgba(0,200,150,.1);color:var(--a)}
+.card.b .av{background:rgba(224,92,58,.1);color:var(--b)}
+.card h3{font-size:14px;font-weight:600;margin-bottom:5px}
+.card p{font-size:12px;color:var(--muted);line-height:1.5}
+
+/* ── App Grid ── */
+#app{display:none;flex:1;grid-template-columns:1fr 340px 1fr;overflow:hidden;height:calc(100vh - 48px)}
+#app.on{display:grid}
+
+/* ── Chat Panels ── */
+.panel{display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--surface);overflow:hidden}
+.panel:last-child{border-right:none;border-left:1px solid var(--border)}
+.ph{padding:13px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px;flex-shrink:0}
+.adot{width:8px;height:8px;border-radius:50%;animation:blink 2.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.ph h3{font-size:13px;font-weight:600}
+.ph .rtag{margin-left:auto;font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:20px;border:1px solid var(--border2);color:var(--muted)}
+.msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
+.msgs::-webkit-scrollbar{width:3px}
+.msgs::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.mwrap{display:flex;flex-direction:column;max-width:88%}
+.mwrap.sent{align-self:flex-end;align-items:flex-end}
+.mwrap.recv{align-self:flex-start;align-items:flex-start}
+.bub{padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.55;word-break:break-word;border:1px solid var(--border2)}
+.sent .bub{background:var(--surface2);border-bottom-right-radius:3px}
+.recv.fa .bub{background:rgba(0,200,150,.06);border-bottom-left-radius:3px}
+.recv.fb .bub{background:rgba(224,92,58,.06);border-bottom-left-radius:3px}
+.ts{font-size:9px;color:var(--muted2);margin-top:3px}
+.compose{padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0}
+.compose textarea{flex:1;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:8px 11px;color:var(--text);font-family:var(--sans);font-size:13px;resize:none;outline:none;line-height:1.5}
+.sbtn{width:38px;height:38px;border-radius:10px;border:none;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;align-self:flex-end;flex-shrink:0;transition:opacity .15s,transform .1s}
+.sbtn:hover{opacity:.8}
+.sbtn:active{transform:scale(.93)}
+.locked{opacity:.35;pointer-events:none}
+
+/* ── Pipeline Center ── */
+#pipe{background:var(--bg);display:flex;flex-direction:column;overflow:hidden}
+.pipe-hdr{padding:13px 16px;border-bottom:1px solid var(--border);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);flex-shrink:0;text-align:center}
+.pbody{flex:1;overflow-y:auto;padding:12px}
+.pbody::-webkit-scrollbar{width:3px}
+.pbody::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* DH panel */
+.dh-panel{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--surface)}
+.dh-title{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;color:var(--purple)}
+.dh-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:7px}
+.dh-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;width:70px;flex-shrink:0;padding-top:1px}
+.dh-val{font-family:var(--mono);font-size:10px;color:var(--text);word-break:break-all;line-height:1.5;flex:1}
+.dh-val.hi{color:var(--yellow)}
+.dh-val.ok{color:var(--green)}
+.dh-step{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid var(--border)}
+.dh-step:last-child{border:none}
+.step-dot{width:6px;height:6px;border-radius:50%;background:var(--border2);flex-shrink:0;transition:background .4s}
+.step-dot.done{background:var(--green)}
+.step-dot.wait{background:var(--yellow);animation:blink 1s infinite}
+.step-txt{font-size:11px;color:var(--muted);transition:color .4s}
+.step-txt.done{color:var(--text)}
+
+/* pipeline stages */
+.sec-lbl{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:10px 0 5px;padding:0 2px}
+.enc-lbl{color:var(--yellow)}
+.dec-lbl{color:var(--green)}
+.stage{border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--surface);opacity:.12;transition:opacity .35s,border-color .35s}
+.stage.lit{opacity:1}
+.stage.lit.enc{border-color:rgba(240,180,41,.3)}
+.stage.lit.dec{border-color:rgba(0,200,150,.3)}
+.stage.lit.neu{border-color:var(--border2)}
+.sname{font-size:9px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;margin-bottom:4px}
+.stage.lit.enc .sname{color:var(--yellow)}
+.stage.lit.dec .sname{color:var(--green)}
+.stage.lit.neu .sname{color:var(--muted)}
+.stxt{font-family:var(--mono);font-size:10px;color:var(--text);word-break:break-all;line-height:1.5}
+.arr{text-align:center;font-size:12px;color:var(--border2);padding:1px 0}
+.sep{border:none;border-top:1px dashed var(--border);margin:8px 0}
+.idle{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;gap:10px;color:var(--muted);font-size:12px;text-align:center;line-height:1.7}
+.idle .ico{font-size:26px;margin-bottom:4px}
+</style>
+</head>
+<body>
+
+<!-- ══ Header ══ -->
+<header>
+  <div class="logo">CRYPTO<span>MESSENGER</span></div>
+  <div class="header-right">
+    <div class="dh-status" id="dhStatus">⏳ Waiting for Key Exchange</div>
+  </div>
+</header>
+
+<!-- ══ Agent Selector ══ -->
+<div id="selector">
+  <h2>Choose your identity</h2>
+  <p>Open this app in two browser windows.<br>Each person picks one agent.</p>
+  <div class="cards">
+    <div class="card a" onclick="chooseAgent('A')">
+      <div class="av">A</div>
+      <h3>Agent A</h3>
+      <p>Source — starts the conversation</p>
+    </div>
+    <div class="card b" onclick="chooseAgent('B')">
+      <div class="av">B</div>
+      <h3>Agent B</h3>
+      <p>Destination — receives first</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ App ══ -->
+<div id="app">
+
+  <!-- Panel A -->
+  <div class="panel" id="panelA">
+    <div class="ph">
+      <div class="adot" style="background:var(--a)"></div>
+      <h3>Agent A</h3>
+      <span class="rtag" id="rtagA">—</span>
+    </div>
+    <div class="msgs" id="msgsA"></div>
+    <div class="compose" id="cmpA">
+      <textarea id="inA" rows="2" placeholder="Type message…"></textarea>
+      <button class="sbtn" style="background:var(--a)" onclick="sendMsg('A')">↑</button>
+    </div>
+  </div>
+
+  <!-- Pipeline -->
+  <div id="pipe">
+    <div class="pipe-hdr">Key Exchange + Pipeline</div>
+    <div class="pbody" id="pbody">
+
+      <!-- DH Status Panel -->
+      <div class="dh-panel">
+        <div class="dh-title">🔑 Diffie-Hellman Key Exchange</div>
+
+        <div class="dh-step" id="s1">
+          <div class="step-dot wait" id="d1"></div>
+          <div class="step-txt" id="t1">Generating keypairs…</div>
+        </div>
+        <div class="dh-step" id="s2">
+          <div class="step-dot" id="d2"></div>
+          <div class="step-txt" id="t2">Exchanging public keys via Firebase</div>
+        </div>
+        <div class="dh-step" id="s3">
+          <div class="step-dot" id="d3"></div>
+          <div class="step-txt" id="t3">Computing shared secret</div>
+        </div>
+        <div class="dh-step" id="s4">
+          <div class="step-dot" id="d4"></div>
+          <div class="step-txt" id="t4">Deriving session keys</div>
+        </div>
+
+        <div id="dhDetails" style="margin-top:10px;display:none">
+          <div class="dh-row">
+            <div class="dh-label">My Public</div>
+            <div class="dh-val hi" id="myPubDisplay">—</div>
+          </div>
+          <div class="dh-row">
+            <div class="dh-label">Their Public</div>
+            <div class="dh-val hi" id="theirPubDisplay">—</div>
+          </div>
+          <div class="dh-row">
+            <div class="dh-label">Shared Secret</div>
+            <div class="dh-val ok" id="sharedDisplay">—</div>
+          </div>
+          <div class="dh-row">
+            <div class="dh-label">Vigenere Key</div>
+            <div class="dh-val ok" id="vigKeyDisplay">—</div>
+          </div>
+          <div class="dh-row">
+            <div class="dh-label">AES Key</div>
+            <div class="dh-val ok" id="aesKeyDisplay">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message pipeline (shown after DH) -->
+      <div id="msgPipe">
+        <div class="idle" id="pipeIdle">
+          <div class="ico">⇅</div>
+          Key exchange in progress…<br>Messaging unlocks after both agents connect.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Panel B -->
+  <div class="panel" id="panelB">
+    <div class="ph">
+      <div class="adot" style="background:var(--b)"></div>
+      <h3>Agent B</h3>
+      <span class="rtag" id="rtagB">—</span>
+    </div>
+    <div class="msgs" id="msgsB"></div>
+    <div class="compose" id="cmpB">
+      <textarea id="inB" rows="2" placeholder="Type reply…"></textarea>
+      <button class="sbtn" style="background:var(--b)" onclick="sendMsg('B')">↑</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ Firebase + Logic ══ -->
+<script>
+// ─────────────────────────────────────────────────────────────
+//  🔥 FIREBASE CONFIG — Replace with your project config
+// ─────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  databaseURL:       "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  projectId:         "YOUR_PROJECT",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db       = firebase.database();
+const dhRef    = db.ref("session/dh");
+const msgsRef  = db.ref("session/messages");
+
+const API       = "http://127.0.0.1:5000";
+const SESSION   = "room1";
+
+let ME          = null;
+let dhReady     = false;
+let myPublicKey = null;
+let myPrivateKey= null;   // NOT stored in Firebase — server-side only
+let seen        = new Set();
+
+// ─── Step helpers ─────────────────────────────────────────────
+function stepDone(n, text) {
+  document.getElementById("d"+n).className = "step-dot done";
+  const t = document.getElementById("t"+n);
+  t.className = "step-txt done";
+  if (text) t.textContent = text;
+}
+function stepWait(n) {
+  document.getElementById("d"+n).className = "step-dot wait";
+}
+
+// ─── Agent Selection ──────────────────────────────────────────
+async function chooseAgent(agent) {
+  ME = agent;
+  document.getElementById("selector").style.display = "none";
+  document.getElementById("app").classList.add("on");
+
+  const other = agent === "A" ? "B" : "A";
+  document.getElementById("rtagA").textContent = agent === "A" ? "YOU"  : "PEER";
+  document.getElementById("rtagB").textContent = agent === "B" ? "YOU"  : "PEER";
+  document.getElementById("cmp"  + other).classList.add("locked");
+
+  await startDH();
+}
+
+// ─── Diffie-Hellman Handshake ─────────────────────────────────
+async function startDH() {
+  // Step 1: Generate keypair (private stays on server)
+  stepWait(1);
+  const gen = await api("/dh/generate", { session_id: SESSION });
+  myPublicKey = gen.public_key;
+  stepDone(1, "Keypair generated ✓  public: " + gen.p_preview);
+  document.getElementById("myPubDisplay").textContent =
+    myPublicKey.slice(0,16) + "…" + myPublicKey.slice(-8);
+
+  // Step 2: Publish my public key in Firebase
+  stepWait(2);
+  await dhRef.child(ME).set({ public_key: myPublicKey, agent: ME });
+  stepDone(2, "Public key published to Firebase ✓");
+
+  // Step 3: Wait for the other agent's public key
+  const other = ME === "A" ? "B" : "A";
+  listenForOtherKey(other);
+
+  // Also listen for incoming messages (unlocks after DH)
+  listenMessages();
+}
+
+function listenForOtherKey(other) {
+  dhRef.child(other).on("value", async snap => {
+    if (!snap.exists() || dhReady) return;
+    const theirPub = snap.val().public_key;
+    if (!theirPub) return;
+
+    stepDone(3, "Other agent's public key received ✓");
+    document.getElementById("theirPubDisplay").textContent =
+      theirPub.slice(0,16) + "…" + theirPub.slice(-8);
+
+    // Step 3: Compute shared secret on Flask server
+    stepWait(3);
+    const comp = await api("/dh/compute", {
+      session_id:   SESSION,
+      their_public: theirPub,
+    });
+
+    stepDone(3, "Shared secret computed ✓  (" + comp.shared_bits + " bits)");
+    stepDone(4, "Session keys derived ✓");
+
+    // Show results
+    document.getElementById("sharedDisplay").textContent = comp.shared_preview;
+    document.getElementById("vigKeyDisplay").textContent = comp.vigenere_key;
+    document.getElementById("aesKeyDisplay").textContent = comp.fernet_key_hint;
+    document.getElementById("dhDetails").style.display  = "block";
+
+    // Update header status
+    const st = document.getElementById("dhStatus");
+    st.textContent = "🔐 Session Key: " + comp.vigenere_key;
+    st.classList.add("ready");
+
+    dhReady = true;
+
+    // Update idle message
+    document.getElementById("pipeIdle").innerHTML =
+      '<div class="ico">✓</div>Key exchange complete!<br>Send a message to see the pipeline.';
+  });
+}
+
+// ─── Message Listener ─────────────────────────────────────────
+function listenMessages() {
+  msgsRef.on("child_added", async snap => {
+    const key  = snap.key;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const { sender, encrypted, ts } = snap.val();
+    addBubble(sender, "sent", "…", ts);
+
+    const res = await api("/decrypt", { encrypted, session_id: SESSION });
+    updateLastBubble(sender, res.original);
+
+    const recv = sender === "A" ? "B" : "A";
+    addBubble(recv, "recv", res.original, ts, sender);
+    showPipeline(sender, encrypted, res);
+  });
+}
+
+// ─── Send ─────────────────────────────────────────────────────
+async function sendMsg(agent) {
+  if (agent !== ME || !dhReady) return;
+  const el   = document.getElementById("in" + agent);
+  const text = el.value.trim();
+  if (!text) return;
+  el.value = "";
+
+  const res = await api("/encrypt", { message: text, session_id: SESSION });
+  msgsRef.push({ sender: agent, encrypted: res.transmitted, ts: Date.now() });
+}
+
+// Keyboard shortcut
+document.addEventListener("keydown", e => {
+  if (!ME) return;
+  const el = document.getElementById("in" + ME);
+  if (document.activeElement === el && e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault(); sendMsg(ME);
+  }
+});
+
+// ─── Pipeline Visualization ───────────────────────────────────
+function showPipeline(sender, encrypted, dec) {
+  const recv = sender === "A" ? "B" : "A";
+  const mp   = document.getElementById("msgPipe");
+  mp.innerHTML = "";
+
+  const idl = document.getElementById("pipeIdle");
+  if (idl) idl.remove();
+
+  const encSteps = [
+    { name:"Plaintext",                              cls:"neu", txt:dec.original },
+    { name:"Layer 1 — Caesar  shift: 7",             cls:"enc", txt:dec.layer1_caesar },
+    { name:"Layer 2 — Vigenere  key: "+dec.vigenere_key_used, cls:"enc", txt:dec.layer2_vigenere },
+    { name:"Layer 3 — AES-128 (DH-derived key) ✓",  cls:"enc", txt:tr(dec.layer3_aes||encrypted,68) },
+  ];
+  const decSteps = [
+    { name:"Received (AES ciphertext)",              cls:"neu", txt:tr(encrypted,68) },
+    { name:"Layer 3 decoded — AES decrypted",        cls:"dec", txt:dec.layer2_vigenere },
+    { name:"Layer 2 decoded — Vigenere decrypted",   cls:"dec", txt:dec.layer1_caesar },
+    { name:"Layer 1 decoded — Caesar decrypted ✓",   cls:"dec", txt:dec.original },
+  ];
+
+  buildSection(mp, "↑ Encryption  (" + sender + " → " + recv + ")", "enc-lbl", encSteps, 0);
+  const sep = document.createElement("hr"); sep.className="sep"; mp.appendChild(sep);
+  buildSection(mp, "↓ Decryption  (Agent " + recv + " receives)", "dec-lbl", decSteps, encSteps.length * 400 + 300);
+}
+
+function buildSection(parent, label, lblCls, steps, baseDelay) {
+  const lbl = document.createElement("div");
+  lbl.className = "sec-lbl " + lblCls;
+  lbl.textContent = label;
+  parent.appendChild(lbl);
+
+  steps.forEach((s, i) => {
+    const st = document.createElement("div");
+    st.className = "stage " + s.cls;
+    st.innerHTML = `<div class="sname">${s.name}</div><div class="stxt">${esc(s.txt)}</div>`;
+    setTimeout(() => st.classList.add("lit"), baseDelay + i * 400);
+    parent.appendChild(st);
+    if (i < steps.length - 1) {
+      const ar = document.createElement("div"); ar.className="arr"; ar.textContent="↓";
+      parent.appendChild(ar);
+    }
+  });
+}
+
+// ─── Bubble Helpers ───────────────────────────────────────────
+function addBubble(panel, type, text, ts, sender) {
+  const c    = document.getElementById("msgs" + panel);
+  const wrap = document.createElement("div");
+  const fc   = sender ? " f" + sender.toLowerCase() : "";
+  wrap.className = "mwrap " + type + fc;
+  wrap.innerHTML = `<div class="bub">${esc(text)}</div><div class="ts">${fmt(ts)}</div>`;
+  c.appendChild(wrap);
+  c.scrollTop = c.scrollHeight;
+}
+function updateLastBubble(panel, text) {
+  const c     = document.getElementById("msgs" + panel);
+  const wraps = c.querySelectorAll(".mwrap.sent");
+  if (!wraps.length) return;
+  wraps[wraps.length-1].querySelector(".bub").textContent = text;
+}
+
+// ─── Utils ───────────────────────────────────────────────────
+function tr(s, n) { return s && s.length>n ? s.slice(0,n)+"…" : (s||"") }
+function fmt(ts)  { const d=new Date(ts); return d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0") }
+function esc(s)   { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") }
+async function api(path, body) {
+  const r = await fetch(API + path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+  return r.json();
+}
+</script>
+</body>
+</html>
